@@ -5,6 +5,7 @@ version1: read bhavcopy files of last 2 days and today live stock data file and 
 version1.1: collect data in a map. with stokname as a key and two day historical data + live data as list for the stock.
 version2: StrategyBuilder with 2DH BO bullish strategy coded and verified actual run.
 version2.1: Nifty index dataanalystics added. (23-July-2021)
+version2.2: Added Open To High and Low analysis. With open > YC/Pivot. 
 version3: TODO 1. To livetest, afternoon data and EOD data. 2. generate report.
             3. Improve on Entry exit. (halfway entry, SL-calc first and calculate Target based on SL and if matching Daily pivot.
             4. Improve execution by adding QTY to profitable trades and reducing for losing.
@@ -180,9 +181,10 @@ class FileReader:
 
 ##        ret_col = [col[7] for col in lt]
 ##        dif_col = [col[8] for col in lt]
-##        print('Total count:', len(ret_col), ': average ret %--', round((sum(ret_col)/len(ret_col)),2), 'stdev of dif--', round(statistics.stdev(dif_col),2))
+##        print('Total count:', len(ret_col), ': average ret %--', round((sum(ret_col)/len(ret_col)),2), ' :stdev of dif--', round(statistics.stdev(dif_col),2))
 
 
+    def_ret = 1
     def readNiftyIndexDataFile(self, fileName):
 
         with open(fileName, newline='') as f:
@@ -194,83 +196,205 @@ class FileReader:
            
 
     def dataAnalytics(self, lt):
+        '''
+        Current analytics of Open to High and Low return, based on daily returns from close to close.
+        Pivot analytics of Crossover of pivot levels to be based on daily ATR calc and contraction and expansion of ATR.
+        To check : 1. % openToHigh return and pivot level cross of high when gapup open and cross YC/Pivot. 
+        '''
+        
         fromdt = lt[0][0]
         ltlen = len(lt)-1
         todt = lt[ltlen][0]
+
+        #print(lt[ltlen-10:ltlen])
+        
         print('Full Data analysis:',fromdt, todt)
         
-        self.calcDailyClosePPReturn(self, lt)
+        self.calcDailyClosePPReturnRSI(self, lt)
+        #self.calcDailyATRret(self, lt)
+        self.calcDailyPivots(self, lt)
         self.calcDailyOpenToHighReturn(self, lt)
         self.calcDailyOpenToLowReturn(self, lt)
-        self.calcDailyATRret(self, lt)
-
+        #print(lt[ltlen-10:ltlen])
+        
         next2Index = int(round((ltlen/3)*2, 0))
         fromdt2 = lt[next2Index][0]        
         print('1/3rd Recent Data analysis:',fromdt2, todt)
-        self.calcDailyClosePPReturn(self, lt[next2Index:ltlen])
+        self.calcDailyClosePPReturnRSI(self, lt[next2Index:ltlen])
         self.calcDailyOpenToHighReturn(self, lt[next2Index:ltlen])
         self.calcDailyOpenToLowReturn(self, lt[next2Index:ltlen])
-        self.calcDailyATRret(self, lt[next2Index:ltlen])
+        #self.calcDailyATRret(self, lt[next2Index:ltlen])
 
-        next3Index = int(round((ltlen/5)*4, 0))
+        next3Index = int(round((ltlen/6)*5, 0))
         fromdt3 = lt[next3Index][0]        
         print('Recent Data analysis:',fromdt3, todt)
-        self.calcDailyClosePPReturn(self, lt[next3Index:ltlen])
+        self.calcDailyClosePPReturnRSI(self, lt[next3Index:ltlen])
         self.calcDailyOpenToHighReturn(self, lt[next3Index:ltlen])
         self.calcDailyOpenToLowReturn(self, lt[next3Index:ltlen])
-        self.calcDailyATRret(self, lt[next3Index:ltlen])
+        #self.calcDailyATRret(self, lt[next3Index:ltlen])
         
         
-    def calcDailyClosePPReturn(self, lt):
+    def calcDailyClosePPReturnRSI(self, lt):
     
         last_cp = float(lt[0][4])
         dif_col = []
         ret_col = []
+        count = 0
+        rsi_period = 14
         for row in lt:
             dt = row[0]
             cp = float(row[4])
             dif = round(cp - last_cp,2)
             #print('----', dt, cp, last_cp, dif)
-            ret = round((dif/last_cp)*100,1)
+            ret = round((dif/last_cp)*100,2)
                 
             dif_col.append(dif)
             ret_col.append(abs(ret))
             last_cp = cp
+            row.append(ret)
             
+            #rsi calc ??? not working
+            '''
+            if(count > rsi_period+1):
+                rsi_calc_list = dif_col[(count-rsi_period):count]
+                #print(rsi_calc_list)
+                #print([x for x in rsi_calc_list if x > 0])
+                #print([x for x in rsi_calc_list if x < 0])
+                avgUp = sum([x for x in rsi_calc_list if x > 0])/rsi_period
+                avgDown = sum([abs(x) for x in rsi_calc_list if x < 0])/rsi_period
+                rs = avgUp/avgDown
+                rsi = round((100-(100/(1+rs))),2)
+                row.append(rsi)
+                #print('count:', count, ' rsi:', rsi, avgUp, avgDown, rs)
+            count = count + 1
+            '''
         print('calcDailyClosePPReturn:')
-        print('Total count:', len(ret_col), ': average ret %--', round((sum(ret_col)/len(ret_col)),2), 'stdev of dif--', round(statistics.stdev(dif_col),2))
+        print('Total count:', len(ret_col), ': average ret %:', round((sum(ret_col)/len(ret_col)),2), ' :stdev of dif:', round(statistics.stdev(dif_col),2))
 
     def calcDailyOpenToHighReturn(self, lt):
         print('calcDailyOpenToHighReturn:')
-        self.calcGenericRet(self, lt, 1, 2, 1)
+        self.calcGenericRet(self, lt, 1, 2, 1, 3)
         
         
     def calcDailyOpenToLowReturn(self, lt):
         print('calcDailyOpenToLowReturn:')
-        self.calcGenericRet(self, lt, 1, 1, 3)
+        self.calcGenericRet(self, lt, 1, 1, 3, 2)
         
         
     def calcDailyATRret(self, lt):
         print('calcDailyATRret:')
-        self.calcGenericRet(self, lt, 1, 2, 3)
+        self.calcGenericRet(self, lt, 1, 2, 3, 4)
         
         
-    def calcGenericRet(self, lt, index_1, index_2, index_3):
+    def calcGenericRet(self, lt, openP_index, highP_index, lowP_index, oppP_index):
 
         dif_col = []
-        ret_col = []                
-        for row in lt:
+        ret_col = []
+        opp_col = []
+        preret_col = []
+        pa_col = []
+        length = len(lt)
+        for i in range(length):
+            row = lt[i]
             dt = row[0]
-            openP = float(row[index_1])
-            highP = float(row[index_2])
-            lowP = float(row[index_3])
+            openP = float(row[openP_index])
+            highP = float(row[highP_index])
+            lowP = float(row[lowP_index])
+            oppP = float(row[oppP_index])
             dif = round(highP - lowP,2)
-            #print('----', dt, openP, highP, dif)
-            ret = round((dif/openP)*100,1)
-                
-     
-            dif_col.append(dif)
-            ret_col.append(abs(ret))
+            oppDif = abs(round(oppP - openP,2))
+            #print(':--', dt, openP, highP, dif)
+            ret = abs(round((dif/openP)*100,1))
             
-        print('Total count:', len(ret_col), ': average ret %--', round((sum(ret_col)/len(ret_col)),2), 'stdev of dif--', round(statistics.stdev(dif_col),2))
+            if(ret > self.def_ret): 
+                dif_col.append(dif)
+                ret_col.append(ret)
+                opp_col.append(oppDif)
+                #daily returns
+                preret_col.append(lt[i-1][5])
+                self.pivotAnalysis(self, row, lt[i-1], pa_col)
+                
+        #print(preret_col)
+        ht_cnt = len(ret_col)
+        rv_cnt = len([x for x in pa_col if x == 'Reversal'])
+        tr_cnt = len([x for x in pa_col if x == 'Trending'])
+        pv_cnt = len([x for x in pa_col if x == 'Trending'])
+        print('Total HT count:', len(ret_col), ': average ret %:', round((sum(ret_col)/len(ret_col)),2), ' :stdev of dif:', round(statistics.stdev(dif_col),2), ' :stdev of OPPdif:', round(statistics.stdev(opp_col),2), ' :stdev of preDay ret:', round(statistics.stdev(preret_col),2))
+        print('count(Reversal):', rv_cnt, 'count(Trending):', tr_cnt, 'count(Pivot):', pv_cnt)
+              
+    def calcDailyPivots(self, lt):
+        #calculate NSE pivots
+        #Pivot =  High + Low + Close /3, R1 = (2*Pivot)-Low, S1= (2*Pivot)-High, R2 = Pivot+(H-L) , S2=P-(H-L)
+        #'pivot'
+        for row in lt:
+            openP = round(float(row[1]),0)
+            highP = round(float(row[2]),0)
+            lowP = round(float(row[3]),0)
+            closeP = round(float(row[4]),0)
+            pivot = round(((openP+highP+closeP)/3),0)
+            r1 = (2*pivot) - lowP
+            r2 = pivot + (highP - lowP)
+            s1 = (2*pivot) - highP
+            s2 = pivot - (highP - lowP)
+            
+            row.append(pivot)
+            row.append(r1)
+            row.append(r2)
+            row.append(s1)
+            row.append(s2)
+
+
+    '''
+        If open above pivot, how far reached at high 
+    '''
+
+    def pivotAnalysis(self, row, pre_row, pa_col):
+            openP = round(float(row[1]),0)
+            highP = round(float(row[2]),0)
+            lowP = round(float(row[3]),0)
+            closeP = round(float(row[4]),0)
+            yDHP = round(float(pre_row[2]),0)
+            yDLP = round(float(pre_row[3]),0)
+            ycP = round(float(pre_row[4]),0)            
+            pivot = pre_row[6]
+            r1 = pre_row[7]
+            r2 = pre_row[8]
+            s1 = pre_row[9]
+            s2 = pre_row[10]
+
+            analysis = 'None'
+            #rise trend
+            cond1 = 0
+            if(openP > ycP and openP < yDHP):
+                analysis = 'Open>YC'
+                cond1 = 1
+            if(openP > pivot and openP < r1):
+                analysis = 'Open>Pivot'    
+                cond1 = 1
+                
+            if(cond1 == 1 and highP > r2):
+                analysis = 'Trending'
+
+            #fall trend
+            cond2 = 0
+            if(openP < ycP and openP > yDLP):
+                analysis = 'Open<YC'
+                cond2 = 1
+            if(openP < pivot and openP > s1):
+                analysis = 'Open<Pivot'    
+                cond2 = 1
+                
+            if(cond2 == 1 and lowP > s2):
+                analysis = 'Trending'
+
+            #gapdown reversal rise
+            if(cond1 == 0 and highP > r2):
+                analysis = 'Reversal'
+                
+            #gapup reversal fall
+            if(cond2 == 0 and lowP < s2):
+                analysis = 'Reversal'
+
+            #pa_col.append(row[0] + " : " + analysis)
+            pa_col.append(analysis)   
         
