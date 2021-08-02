@@ -1,5 +1,5 @@
-import csv
-import statistics
+import csv, statistics, datetime
+#import os, urllib.request, concurrent.futures  
 '''
 version1: read bhavcopy files of last 2 days and today live stock data file and mearge in a list and print.
 version1.1: collect data in a map. with stokname as a key and two day historical data + live data as list for the stock.
@@ -142,8 +142,7 @@ class FileReader:
         #selectedStocksData.sort()
         #for row in selectedStocksData:
         #?print(selectedStocksData)
-
-    
+  
     
     def readLiveStocksDataFile(self, fileName, selectedStocksList, selectedStocksData):
         with open(fileName, newline='') as f:
@@ -184,7 +183,7 @@ class FileReader:
 ##        print('Total count:', len(ret_col), ': average ret %--', round((sum(ret_col)/len(ret_col)),2), ' :stdev of dif--', round(statistics.stdev(dif_col),2))
 
 
-    def_ret = 1
+    def_ret = 0.5
     def readNiftyIndexDataFile(self, fileName):
 
         with open(fileName, newline='') as f:
@@ -192,7 +191,9 @@ class FileReader:
             print('Date, Close Price')
             lt = list(reader)
             del lt[0]
-            self.dataAnalytics(self, lt)
+            newdata = self.getFilteredData(self, lt)
+            self.dataAnalytics(self, newdata)
+            
            
 
     def dataAnalytics(self, lt):
@@ -210,7 +211,7 @@ class FileReader:
         
         print('Full Data analysis:',fromdt, todt)
         
-        self.calcDailyClosePPReturnRSI(self, lt)
+        self.calcDailyClosePPReturnRSI(self, lt, 0)
         #self.calcDailyATRret(self, lt)
         self.calcDailyPivots(self, lt)
         self.calcDailyOpenToHighReturn(self, lt)
@@ -220,21 +221,21 @@ class FileReader:
         next2Index = int(round((ltlen/3)*2, 0))
         fromdt2 = lt[next2Index][0]        
         print('1/3rd Recent Data analysis:',fromdt2, todt)
-        self.calcDailyClosePPReturnRSI(self, lt[next2Index:ltlen])
+        self.calcDailyClosePPReturnRSI(self, lt[next2Index:ltlen], 0)
         self.calcDailyOpenToHighReturn(self, lt[next2Index:ltlen])
         self.calcDailyOpenToLowReturn(self, lt[next2Index:ltlen])
         #self.calcDailyATRret(self, lt[next2Index:ltlen])
-
+        
         next3Index = int(round((ltlen/6)*5, 0))
         fromdt3 = lt[next3Index][0]        
         print('Recent Data analysis:',fromdt3, todt)
-        self.calcDailyClosePPReturnRSI(self, lt[next3Index:ltlen])
+        self.calcDailyClosePPReturnRSI(self, lt[next3Index:ltlen], 0)
         self.calcDailyOpenToHighReturn(self, lt[next3Index:ltlen])
         self.calcDailyOpenToLowReturn(self, lt[next3Index:ltlen])
         #self.calcDailyATRret(self, lt[next3Index:ltlen])
         
         
-    def calcDailyClosePPReturnRSI(self, lt):
+    def calcDailyClosePPReturnRSI(self, lt, flag):
     
         last_cp = float(lt[0][4])
         dif_col = []
@@ -245,13 +246,15 @@ class FileReader:
             dt = row[0]
             cp = float(row[4])
             dif = round(cp - last_cp,2)
-            #print('----', dt, cp, last_cp, dif)
             ret = round((dif/last_cp)*100,2)
                 
             dif_col.append(dif)
-            ret_col.append(abs(ret))
-            last_cp = cp
+            ret_col.append(abs(ret))            
             row.append(ret)
+            if(flag == 1 and ret > 2):                
+                #print('----', dt, cp, last_cp, dif)
+                print(row)
+            last_cp = cp
             
             #rsi calc ??? not working
             '''
@@ -319,7 +322,9 @@ class FileReader:
         rv_cnt = len([x for x in pa_col if x == 'Reversal'])
         tr_cnt = len([x for x in pa_col if x == 'Trending'])
         pv_cnt = len([x for x in pa_col if x == 'Trending'])
-        print('Total HT count:', len(ret_col), ': average ret %:', round((sum(ret_col)/len(ret_col)),2), ' :stdev of dif:', round(statistics.stdev(dif_col),2), ' :stdev of OPPdif:', round(statistics.stdev(opp_col),2), ' :stdev of preDay ret:', round(statistics.stdev(preret_col),2))
+        print('Total HT count:', len(ret_col), ': average ret %:', round((sum(ret_col)/len(ret_col)),2), ' :stdev of dif:',
+              round(statistics.stdev(dif_col),2), ' :stdev of OPPdif:', round(statistics.stdev(opp_col),2),
+              ' :stdev of preDay ret:', round(statistics.stdev(preret_col),2))
         print('count(Reversal):', rv_cnt, 'count(Trending):', tr_cnt, 'count(Pivot):', pv_cnt)
               
     def calcDailyPivots(self, lt):
@@ -396,5 +401,29 @@ class FileReader:
                 analysis = 'Reversal'
 
             #pa_col.append(row[0] + " : " + analysis)
-            pa_col.append(analysis)   
-        
+            pa_col.append(analysis)
+
+    
+    def getFilteredData(self, lt):
+        '''
+            mark the first thursday
+            loop for next 5 days and find if it is a thursday,
+                if it is a thursday, take it as exp d and loop for next 5 days.
+            if it is friday w/o a thursday, take the previous day as exp day
+        '''
+        frmt_str = '%d/%m/%Y'
+        i = 0
+        filtered_data = []
+        for row in lt:
+            dt_str = row[0]
+            dt_fld = datetime.datetime.strptime(dt_str, frmt_str)
+            if(dt_fld.weekday() == 3):
+                filtered_data.append(row)
+                '''
+                #row.append(dt_str)
+                
+                if(dt_fld.year > 2018):
+                    print(row)
+                '''
+        return filtered_data            
+           
