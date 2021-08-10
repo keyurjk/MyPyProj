@@ -3,14 +3,8 @@ import csv, statistics, datetime
 '''
 version1.1: Nifty index dataanalystics added. (23-July-2021)
 version1.2: Added Open To High and Low analysis. With open > YC/Pivot.
-version1.3: Analyse particular day. 
-cmd to exec
-dInst = DailyDataAnalyser; dInst.def_ret = 1; dInst.oppDif_sl_divisr = 2; dInst.day_to_check = 3; dInst.print_flag = 1;
-dInst.readOHLCDataFile(dInst,'C:\\Users\\keyur\\Documents\\Keyur\\TradeBook\\PythonPrograms\\NSE_Index_data.csv');
-
- dInst = DailyDataAnalyser; dInst.do_analysis = 0; dInst.print_flag = 0; dInst.fixed_cost = 35; dInst.normal_pnl_flag = 1, 
- dInst.readOHLCDataFile(dInst,'C:\\Users\\keyur\\Documents\\Keyur\\TradeBook\\PythonPrograms\\NSE_Index_data.csv');
-
+version1.3: Analyse particular day of week. 
+version1.4: Execution varation, 1 lot, 2 lot, 3 lot with 10-50% gain exit, 50% SL, 2nd lot max exit at STD dev, or at close PP.
 '''
 class DailyDataAnalyser:
 
@@ -19,10 +13,19 @@ class DailyDataAnalyser:
     frmt_str = '%d/%m/%Y'
     #thursday
     day_to_check = 3
-    print_flag = 1
-    do_analysis = 1
-    fixed_cost = 20
-    normal_pnl_flag = 1
+    print_flag = 0
+    do_analysis_only = 0
+    backtest_trading_strategy = 0
+    fixed_cost = 45
+    simple_exec_flag = 3
+    lots_play = 2
+    stk_pp_dif = 50
+
+    min_points_diff = 10
+    max_pnl_perc = 1.5
+    min_sl_divisr = 2
+    long_max_exit_stddev = 40
+    short_max_exit_stddev = 70
     
     def readOHLCDataFile(self, fileName):
 
@@ -32,9 +35,9 @@ class DailyDataAnalyser:
             print('Default return set:', self.def_ret, ' , opp diff SL:', self.oppDif_sl_divisr, ', weekday to test:', self.day_to_check)
             lt = list(reader)
             del lt[0]
-            if(self.do_analysis == 1):
+            if(self.do_analysis_only == 1):
                 self.dataAnalytics(self, lt)
-            if(self.do_analysis == 0):
+            if(self.backtest_trading_strategy == 1):
                 self.tradeReport(self, lt)    
             
     def dataAnalytics(self, lt):
@@ -280,7 +283,7 @@ class DailyDataAnalyser:
             dt_str = row[0]
             dt_fld = datetime.datetime.strptime(dt_str, self.frmt_str)
             if(dt_fld.weekday() == self.day_to_check):
-                if(self.do_analysis == 1):
+                if(self.do_analysis_only == 1):
                     filtered_data.append(lt[i-1])
 
                 filtered_data.append(row)
@@ -297,9 +300,10 @@ class DailyDataAnalyser:
         todt = lt[ltlen][0]
         lt = self.getFilteredData(self, lt)        
         ltlen = len(lt)-1
-        print('Full Data analysis:',fromdt, todt, ' for weekday=', self.day_to_check)
+        print('Full Data analysis:',fromdt, todt, ' for weekday=', self.day_to_check, 
+              'self.simple_exec_flag:', self.simple_exec_flag, ' cost*1.5:', (self.fixed_cost * self.max_pnl_perc))
                 
-        self.execOptionIntraday(self, lt, 0)
+        self.execOptionIntraday(self, lt, 1)
         print('================================================')
         
         next2Index = int(round((ltlen/3)*2, 0))
@@ -317,7 +321,7 @@ class DailyDataAnalyser:
         
 
     def execOptionIntraday(self, lt, local_print_flag):
-
+        self.lots_play = 2
         '''
         strategy:Long: at open buy Open+50CE @ cost:20, if  diff(open to high) > 50 , capture PnL = diff-cost , else -20 as loss.
         Short: buy open-50PE @ 20, if  diff(open to low) > 50 , capture PnL = diff-cost , else -20 as loss.
@@ -329,8 +333,15 @@ class DailyDataAnalyser:
         short_pos_ret = []
         long_neg_ret = []
         short_neg_ret = []
+        all_ret = []
+        lpr_cnt = 0
+        spr_cnt = 0
+        exec_cnt = 0
+        stage = 10
         for row in lt:
+            dt_str = row[0]
             
+            exec_cnt = exec_cnt + 1
             openP = round(float(row[1]),0)
                        
             highP = round(float(row[2]),0)
@@ -339,10 +350,11 @@ class DailyDataAnalyser:
             stk = round(openP,-2)
             CE_stk = stk
             PE_stk = stk
-            if(stk < openP):
-                CE_stk = stk + 50
-            if(stk > openP):
-                PE_stk = stk - 50
+            #selecting 50 points OTM strikes
+            #if(stk < openP):
+            CE_stk = stk - self.stk_pp_dif
+            #if(stk > openP):
+            PE_stk = stk + self.stk_pp_dif
                 
             high_dif = highP - openP
             low_dif = openP - lowP
@@ -351,10 +363,19 @@ class DailyDataAnalyser:
                 print(row)
                 print('openP:',openP, ':CE_stk:', CE_stk, ':PE_stk:', PE_stk)
                 print('high_dif:',high_dif, ':low_dif:', low_dif)
-            self.calcPnl(self, high_dif, long_pos_ret, long_neg_ret)
-            self.calcPnl(self, low_dif, short_pos_ret, short_neg_ret)
+            l_ret = self.calcPnl(self, high_dif, long_pos_ret, long_neg_ret, (closeP - CE_stk))
+            s_ret = self.calcPnl(self, low_dif, short_pos_ret, short_neg_ret, (PE_stk - closeP))
 
-        if(local_print_flag == 1):
+            #all_ret.append([dt_str, l_ret, s_ret, (l_ret+s_ret)])
+            all_ret.append([dt_str, (l_ret+s_ret)])
+            lpr_cnt = len(long_pos_ret)
+            spr_cnt = len(short_pos_ret)
+            if(lpr_cnt > stage or spr_cnt > stage):
+                print('stage surpassed:', stage, 'self.lots_play', self.lots_play)
+                stage = stage + 10
+                self.lots_play = self.lots_play + 2
+
+        if(self.print_flag == 1):
             print('long_pos_ret:', long_pos_ret)
             print('long_neg_ret:', long_neg_ret)
             print('short_pos_ret:', short_pos_ret)
@@ -382,26 +403,68 @@ class DailyDataAnalyser:
               ' :stdev of overall:', round(statistics.stdev((comb_pos_ret+comb_neg_ret)),2) ,
               ' :Overall Total ret:', (sum(comb_pos_ret)+sum(comb_neg_ret)) 
               )
+        print(all_ret)
 
-    #stdev of long +ve ret = 40, stdev of short +ve ret = 70
-    def calcPnl(self, diff, pos_ret, neg_ret):
-            
-        if(self.normal_pnl_flag == 1):
-            if(diff > 50):
-                pnl = diff - self.fixed_cost
-                pos_ret.append(pnl)
+    '''
+    Execution varation, 1 lot, 2 lot, 3 lot with 10-50% gain exit, 50% SL, 2nd lot max exit at STD dev, or at close PP.
+    stdev of long +ve ret = 40, stdev of short +ve ret = 70
+    '''
+   
+    
+    def calcPnl(self, diff, pos_ret, neg_ret, closePP_diff):
+        #print('calcPnl:0', diff)
+        pnl = 0
+        pnl_1 = 0
+        pnl_2 = 0
+        if(self.simple_exec_flag == 1):
+            #print('calcPnl:1', diff)
+            if(diff > self.stk_pp_dif):
+                pnl = ((diff - self.fixed_cost)-(self.min_points_diff)) * self.lots_play
+                pos_ret.append(pnl)          
             else:
-                pnl = 0 - self.fixed_cost
+                pnl = (0 - (self.fixed_cost/self.min_sl_divisr)) * self.lots_play
                 neg_ret.append(pnl)
-        else:
-            if(diff > (self.fixed_cost+10)):
-                #1st lot at 20% of fixed cost so at least 10 points+fixed cost, so 10 Rs.
-                pnl_1 = 10
-                pnl_2 = (diff - self.fixed_cost) -10
+                
+            if(self.print_flag == 1):    
+                print('calcPnl:1', diff, closePP_diff, 'total pnl ', pnl)     
+        elif(self.simple_exec_flag == 2):
+            #??
+            if(diff > (self.min_points_diff)):
+                #1st lot at 20% of fixed cost so at least 10 points+fixed cost, so 10 Rs. self.min_points_diff
+                pnl_1 = self.min_points_diff
+                #2nd lot at 50% higher 
+                if(diff > (self.fixed_cost * (self.max_pnl_perc))):
+                    pnl_2 = ((self.fixed_cost * (self.max_pnl_perc)) - self.fixed_cost) * (self.lots_play-1)
+                else:
+                    #exit at 50% stop loss
+                    pnl_2 = (0 - (self.fixed_cost/self.min_sl_divisr)) * (self.lots_play-1)
                 pnl = pnl_1 + pnl_2
                 pos_ret.append(pnl)
             else:
-                pnl_1 = - 10
-                pnl_2 = 0 - self.fixed_cost
+                 #exit at 50% stop loss, 2nd lot at full loss
+                pnl_1 = (0 - (self.fixed_cost/self.min_sl_divisr))
+                pnl_2 = (0 - (self.fixed_cost/self.min_sl_divisr)) * (self.lots_play-1)
                 pnl = pnl_1 + pnl_2
                 neg_ret.append(pnl)
+                
+            if(self.print_flag == 1):    
+                print('calcPnl:2', diff, pnl_1, pnl_2, 'total pnl ', pnl)    
+        elif(self.simple_exec_flag == 3):
+            if(closePP_diff > self.fixed_cost):
+                pnl = (closePP_diff - self.fixed_cost) * self.lots_play
+                pos_ret.append(pnl)
+            elif(closePP_diff < self.fixed_cost and closePP_diff > 2):
+                pnl = (closePP_diff - self.fixed_cost) * self.lots_play
+                neg_ret.append(pnl)
+            elif(closePP_diff < 2):
+                if(diff < self.min_points_diff):
+                    pnl = (0 - self.fixed_cost/self.min_sl_divisr) * self.lots_play
+                    neg_ret.append(pnl)
+                else:
+                    pnl = (0 - self.fixed_cost) * self.lots_play
+                    neg_ret.append(pnl)
+
+            if(self.print_flag == 1):    
+                print('calcPnl:3', diff, closePP_diff, ' pnl ', pnl)
+                
+        return pnl
