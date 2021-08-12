@@ -5,27 +5,31 @@ version1.1: Nifty index dataanalystics added. (23-July-2021)
 version1.2: Added Open To High and Low analysis. With open > YC/Pivot.
 version1.3: Analyse particular day of week. 
 version1.4: Execution varation, 1 lot, 2 lot, 3 lot with 10-50% gain exit, 50% SL, 2nd lot max exit at STD dev, or at close PP.
+version1.5: To calculate realtime PP for entry at open PP with IV range as 14 (short) and (10) long for high volt and 11/9 for low volt
+based on previous day ATR or Pivot distance increase/decrease.
 '''
 class DailyDataAnalyser:
 
-    def_ret = 1
+    def_ret = 0.1
     oppDif_sl_divisr = 3
     frmt_str = '%d/%m/%Y'
+    ITM_OTM = 'ITM'
     #thursday
     day_to_check = 3
     print_flag = 0
-    do_analysis_only = 0
+    do_analysis_only = 1
     backtest_trading_strategy = 0
-    fixed_cost = 45
-    simple_exec_flag = 3
-    lots_play = 2
-    stk_pp_dif = 50
+    fixed_cost = 5
+    simple_exec_flag = 2
+    lots_play = 1
+    stk_pp_dif = 100
+    stage_cnt = 2
 
-    min_points_diff = 10
+    min_points_diff = 2
     max_pnl_perc = 1.5
-    min_sl_divisr = 2
-    long_max_exit_stddev = 40
-    short_max_exit_stddev = 70
+    min_sl_divisr = 3
+    long_max_exit_stddev = 45
+    short_max_exit_stddev = 65
     
     def readOHLCDataFile(self, fileName):
 
@@ -159,7 +163,8 @@ class DailyDataAnalyser:
             ret = abs(round((dif/openP)*100,1))
             dt_fld = datetime.datetime.strptime(dt_str, self.frmt_str)            
                                 
-            if(dt_fld.weekday() == self.day_to_check and ret > self.def_ret):
+            if(dt_fld.weekday() == self.day_to_check):
+                #and ret > self.def_ret):
                 #and (oppDif < (ret/self.oppDif_sl_divisr))): 
                 dif_col.append(dif)
                 ret_col.append(ret)
@@ -283,8 +288,8 @@ class DailyDataAnalyser:
             dt_str = row[0]
             dt_fld = datetime.datetime.strptime(dt_str, self.frmt_str)
             if(dt_fld.weekday() == self.day_to_check):
-                if(self.do_analysis_only == 1):
-                    filtered_data.append(lt[i-1])
+                #if(self.do_analysis_only == 1):
+                    #filtered_data.append(lt[i-1])
 
                 filtered_data.append(row)
                 
@@ -321,7 +326,7 @@ class DailyDataAnalyser:
         
 
     def execOptionIntraday(self, lt, local_print_flag):
-        self.lots_play = 2
+        self.lots_play = 1
         '''
         strategy:Long: at open buy Open+50CE @ cost:20, if  diff(open to high) > 50 , capture PnL = diff-cost , else -20 as loss.
         Short: buy open-50PE @ 20, if  diff(open to low) > 50 , capture PnL = diff-cost , else -20 as loss.
@@ -337,24 +342,32 @@ class DailyDataAnalyser:
         lpr_cnt = 0
         spr_cnt = 0
         exec_cnt = 0
-        stage = 10
+        stage = self.stage_cnt
+        prev_yr = 2011
+        yearly_ret = 0
         for row in lt:
             dt_str = row[0]
-            
-            exec_cnt = exec_cnt + 1
+            dt_fld = datetime.datetime.strptime(dt_str, self.frmt_str)
+            cur_yr = dt_fld.year 
+           
             openP = round(float(row[1]),0)
                        
             highP = round(float(row[2]),0)
             lowP = round(float(row[3]),0)
             closeP = round(float(row[4]),0)
-            stk = round(openP,-2)
+            stk = round(openP,-1)
             CE_stk = stk
             PE_stk = stk
-            #selecting 50 points OTM strikes
-            #if(stk < openP):
+            #print('selecting 100 points ITM strikes')
             CE_stk = stk - self.stk_pp_dif
-            #if(stk > openP):
+            if((CE_stk - openP) > self.stk_pp_dif):
+                CE_stk = stk
+            
             PE_stk = stk + self.stk_pp_dif
+            if((openP - PE_stk) > self.stk_pp_dif):
+                PE_stk = stk
+
+            #print('openP:', openP, ' stk:', stk, ' CE_stk:', CE_stk, ' PE_stk:', PE_stk)
                 
             high_dif = highP - openP
             low_dif = openP - lowP
@@ -370,18 +383,34 @@ class DailyDataAnalyser:
             all_ret.append([dt_str, (l_ret+s_ret)])
             lpr_cnt = len(long_pos_ret)
             spr_cnt = len(short_pos_ret)
-            if(lpr_cnt > stage or spr_cnt > stage):
-                print('stage surpassed:', stage, 'self.lots_play', self.lots_play)
-                stage = stage + 10
-                self.lots_play = self.lots_play + 2
-
+            yearly_ret = yearly_ret + l_ret + s_ret
+            if(cur_yr > prev_yr):
+                print('------100 points ITM stk------')
+                print(row)
+                print('openP:',openP, ' stk ', stk, ':CE_stk:', CE_stk, ':PE_stk:', PE_stk)
+                print('high_dif:',high_dif, ':low_dif:', low_dif, 'CE closePP diff',
+                      (closeP - CE_stk), 'PE close pp diff', (PE_stk - closeP), 'CE ret', l_ret, 'PE ret', s_ret)
+                print('------------')
+                print(cur_yr, ':- yearly ret----: ', yearly_ret)
+                #print(all_ret)
+                stage = stage + 1
+                #self.lots_play = self.lots_play + 2
+                prev_yr = cur_yr
+                self.fixed_cost = self.fixed_cost + self.stage_cnt
+                self.min_points_diff = self.min_points_diff + self.stage_cnt
+                print('stage:', stage, ' lots play:', self.lots_play, 'self.fixed_cost:', self.fixed_cost,
+                      'self.min_points_diff', self.min_points_diff)
+                all_ret = []
+                yearly_ret = 0
+        print(all_ret)
         if(self.print_flag == 1):
             print('long_pos_ret:', long_pos_ret)
             print('long_neg_ret:', long_neg_ret)
             print('short_pos_ret:', short_pos_ret)
             print('short_neg_ret:', short_neg_ret)
             
-        print('Total count:', tc, ' from Total count', tc)
+        print('Total count:', tc, ' from Total count', tc, ' final stage:', stage,
+              ' lots play:', self.lots_play, 'self.fixed_cost:', self.fixed_cost, 'self.min_points_diff', self.min_points_diff)
         lpr = len(long_pos_ret)
         lnr = len(long_neg_ret)
         spr = len(short_pos_ret)
@@ -403,8 +432,9 @@ class DailyDataAnalyser:
               ' :stdev of overall:', round(statistics.stdev((comb_pos_ret+comb_neg_ret)),2) ,
               ' :Overall Total ret:', (sum(comb_pos_ret)+sum(comb_neg_ret)) 
               )
-        print(all_ret)
-
+        
+        
+        
     '''
     Execution varation, 1 lot, 2 lot, 3 lot with 10-50% gain exit, 50% SL, 2nd lot max exit at STD dev, or at close PP.
     stdev of long +ve ret = 40, stdev of short +ve ret = 70
@@ -468,3 +498,24 @@ class DailyDataAnalyser:
                 print('calcPnl:3', diff, closePP_diff, ' pnl ', pnl)
                 
         return pnl
+
+    def calcTodaysCE(self, openP):
+
+         stk = round(openP,-2)
+         exp_highP = openP + self.long_max_exit_stddev
+         
+         CE_stk = stk
+         '''
+         print('selecting ', self.stk_pp_dif,' points ', self.ITM_OTM,  ' strikes')
+         if(self.ITM_OTM == 'ITM'):             
+             CE_stk = stk - self.stk_pp_dif
+         elif(self.ITM_OTM == 'OTM'):             
+             CE_stk = stk + self.stk_pp_dif
+         elif(self.ITM_OTM == 'ATM'):             
+             CE_stk = stk 
+         '''    
+         if((exp_highP - CE_stk) < self.stk_pp_dif):
+             CE_stk = stk - self.stk_pp_dif
+
+         print('openP:', openP, ' stk:', stk, ' CE_stk:', CE_stk, 'exp_highP', exp_highP, 'diff', (exp_highP - CE_stk))
+                
