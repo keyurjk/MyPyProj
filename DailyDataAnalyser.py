@@ -1,4 +1,5 @@
-import csv, statistics, datetime
+import csv, math, statistics, datetime
+
 #import os, urllib.request, concurrent.futures  
 '''
 version1.1: Nifty index dataanalystics added. (23-July-2021)
@@ -17,12 +18,12 @@ class DailyDataAnalyser:
     #thursday
     day_to_check = 3
     print_flag = 0
-    do_analysis_only = 1
-    backtest_trading_strategy = 0
+    do_analysis_only = 0
+    backtest_trading_strategy = 1
     fixed_cost = 5
-    simple_exec_flag = 2
+    simple_exec_flag = 1
     lots_play = 1
-    stk_pp_dif = 100
+    stk_pp_dif = 50
     stage_cnt = 2
 
     min_points_diff = 2
@@ -30,7 +31,14 @@ class DailyDataAnalyser:
     min_sl_divisr = 3
     long_max_exit_stddev = 45
     short_max_exit_stddev = 65
-    
+    high_volt_ret = 2
+    low_volt_ret = 1
+    default_volt = 10
+
+    int_rate = 0.1
+    default_theta = 0.9
+    year_d = 365
+
     def readOHLCDataFile(self, fileName):
 
         with open(fileName, newline='') as f:
@@ -290,7 +298,8 @@ class DailyDataAnalyser:
             if(dt_fld.weekday() == self.day_to_check):
                 #if(self.do_analysis_only == 1):
                     #filtered_data.append(lt[i-1])
-
+                #append YD return
+                row.append(lt[i-1][5])
                 filtered_data.append(row)
                 
                 #row.append(dt_str)
@@ -303,10 +312,11 @@ class DailyDataAnalyser:
         fromdt = lt[0][0]
         ltlen = len(lt)-1
         todt = lt[ltlen][0]
+        self.calcDailyClosePPReturnRSI(self, lt, 0)
         lt = self.getFilteredData(self, lt)        
         ltlen = len(lt)-1
         print('Full Data analysis:',fromdt, todt, ' for weekday=', self.day_to_check, 
-              'self.simple_exec_flag:', self.simple_exec_flag, ' cost*1.5:', (self.fixed_cost * self.max_pnl_perc))
+              'self.simple_exec_flag:', self.simple_exec_flag,)
                 
         self.execOptionIntraday(self, lt, 1)
         print('================================================')
@@ -355,10 +365,11 @@ class DailyDataAnalyser:
             highP = round(float(row[2]),0)
             lowP = round(float(row[3]),0)
             closeP = round(float(row[4]),0)
-            stk = round(openP,-1)
+            YD_ret = row[len(row)-1]
+            stk = round(openP,-2)
             CE_stk = stk
             PE_stk = stk
-            #print('selecting 100 points ITM strikes')
+            #print('selecting', self.stk_pp_dif, ' points ITM strikes')
             CE_stk = stk - self.stk_pp_dif
             if((CE_stk - openP) > self.stk_pp_dif):
                 CE_stk = stk
@@ -376,8 +387,8 @@ class DailyDataAnalyser:
                 print(row)
                 print('openP:',openP, ':CE_stk:', CE_stk, ':PE_stk:', PE_stk)
                 print('high_dif:',high_dif, ':low_dif:', low_dif)
-            l_ret = self.calcPnl(self, high_dif, long_pos_ret, long_neg_ret, (closeP - CE_stk))
-            s_ret = self.calcPnl(self, low_dif, short_pos_ret, short_neg_ret, (PE_stk - closeP))
+            l_ret = self.calcPnl(self, high_dif, long_pos_ret, long_neg_ret, (closeP - CE_stk), openP, CE_stk, YD_ret, 'CE')
+            s_ret = self.calcPnl(self, low_dif, short_pos_ret, short_neg_ret, (PE_stk - closeP), openP, PE_stk, YD_ret, 'PE')
 
             #all_ret.append([dt_str, l_ret, s_ret, (l_ret+s_ret)])
             all_ret.append([dt_str, (l_ret+s_ret)])
@@ -441,61 +452,66 @@ class DailyDataAnalyser:
     '''
    
     
-    def calcPnl(self, diff, pos_ret, neg_ret, closePP_diff):
+    def calcPnl(self, diff, pos_ret, neg_ret, closePP_diff, openP, stk, YD_ret, CE_PE):
         #print('calcPnl:0', diff)
         pnl = 0
         pnl_1 = 0
         pnl_2 = 0
+        cost = self.calcCost(self, openP, stk, YD_ret, CE_PE)
+        #simple exec, go for high/low PP diff - min_diff, (difficult to execute)    
         if(self.simple_exec_flag == 1):
             #print('calcPnl:1', diff)
             if(diff > self.stk_pp_dif):
-                pnl = ((diff - self.fixed_cost)-(self.min_points_diff)) * self.lots_play
+                pnl = ((diff - cost)-(self.min_points_diff)) * self.lots_play
                 pos_ret.append(pnl)          
             else:
-                pnl = (0 - (self.fixed_cost/self.min_sl_divisr)) * self.lots_play
+                pnl = (0 - (cost/self.min_sl_divisr)) * self.lots_play
                 neg_ret.append(pnl)
                 
             if(self.print_flag == 1):    
-                print('calcPnl:1', diff, closePP_diff, 'total pnl ', pnl)     
+                print('calcPnl:1', 'diff', diff, 'closePP_diff', closePP_diff, 'total pnl ', pnl,
+                      'spot', openP, 'strike', stk, 'YDret', YD_ret, 'prem', cost, CE_PE)     
         elif(self.simple_exec_flag == 2):
             #??
             if(diff > (self.min_points_diff)):
                 #1st lot at 20% of fixed cost so at least 10 points+fixed cost, so 10 Rs. self.min_points_diff
                 pnl_1 = self.min_points_diff
                 #2nd lot at 50% higher 
-                if(diff > (self.fixed_cost * (self.max_pnl_perc))):
-                    pnl_2 = ((self.fixed_cost * (self.max_pnl_perc)) - self.fixed_cost) * (self.lots_play-1)
+                if(diff > (cost * (self.max_pnl_perc))):
+                    pnl_2 = ((cost * (self.max_pnl_perc)) - cost) * (self.lots_play-1)
                 else:
                     #exit at 50% stop loss
-                    pnl_2 = (0 - (self.fixed_cost/self.min_sl_divisr)) * (self.lots_play-1)
+                    pnl_2 = (0 - (cost/self.min_sl_divisr)) * (self.lots_play-1)
                 pnl = pnl_1 + pnl_2
                 pos_ret.append(pnl)
             else:
                  #exit at 50% stop loss, 2nd lot at full loss
-                pnl_1 = (0 - (self.fixed_cost/self.min_sl_divisr))
-                pnl_2 = (0 - (self.fixed_cost/self.min_sl_divisr)) * (self.lots_play-1)
+                pnl_1 = (0 - (cost/self.min_sl_divisr))
+                pnl_2 = (0 - (cost/self.min_sl_divisr)) * (self.lots_play-1)
                 pnl = pnl_1 + pnl_2
                 neg_ret.append(pnl)
                 
             if(self.print_flag == 1):    
-                print('calcPnl:2', diff, pnl_1, pnl_2, 'total pnl ', pnl)    
+                print('calcPnl:2', 'diff', diff, 'closePP_diff', closePP_diff, 'pnl_1', pnl_1, 'pnl_2', pnl_2, 'total pnl ', pnl,
+                      'spot', openP, 'strike', stk, 'YDret', YD_ret, 'prem', cost, CE_PE)    
         elif(self.simple_exec_flag == 3):
-            if(closePP_diff > self.fixed_cost):
-                pnl = (closePP_diff - self.fixed_cost) * self.lots_play
+            if(closePP_diff > cost):
+                pnl = (closePP_diff - cost) * self.lots_play
                 pos_ret.append(pnl)
-            elif(closePP_diff < self.fixed_cost and closePP_diff > 2):
-                pnl = (closePP_diff - self.fixed_cost) * self.lots_play
+            elif(closePP_diff < cost and closePP_diff > 2):
+                pnl = (closePP_diff - cost) * self.lots_play
                 neg_ret.append(pnl)
             elif(closePP_diff < 2):
                 if(diff < self.min_points_diff):
-                    pnl = (0 - self.fixed_cost/self.min_sl_divisr) * self.lots_play
+                    pnl = (0 - cost/self.min_sl_divisr) * self.lots_play
                     neg_ret.append(pnl)
                 else:
-                    pnl = (0 - self.fixed_cost) * self.lots_play
+                    pnl = (0 - cost) * self.lots_play
                     neg_ret.append(pnl)
 
             if(self.print_flag == 1):    
-                print('calcPnl:3', diff, closePP_diff, ' pnl ', pnl)
+                print('calcPnl:3', 'diff', diff, 'closePP_diff', closePP_diff, ' pnl ', pnl,
+                      'spot', openP, 'strike', stk, 'YDret', YD_ret, 'prem', cost, CE_PE)
                 
         return pnl
 
@@ -518,4 +534,65 @@ class DailyDataAnalyser:
              CE_stk = stk - self.stk_pp_dif
 
          print('openP:', openP, ' stk:', stk, ' CE_stk:', CE_stk, 'exp_highP', exp_highP, 'diff', (exp_highP - CE_stk))
-                
+
+    def calcCost(self, spot, stk, YD_ret, CE_PE):
+        #print('calcCost: CE_stk', CE_stk, 'PE_stk', PE_stk)
+        CE_volt = self.default_volt
+        PE_volt = self.default_volt + self.high_volt_ret
+        if(YD_ret >= self.high_volt_ret):
+            CE_volt = CE_volt + self.high_volt_ret
+            PE_volt = PE_volt + self.high_volt_ret
+        elif(YD_ret >= self.low_volt_ret):
+            CE_volt = CE_volt - self.low_volt_ret
+            PE_volt = PE_volt - self.low_volt_ret
+
+        if(CE_PE == 'CE'):    
+            prem = self.calcPrem(self, spot, stk, 1, CE_volt, 'CE')
+        elif(CE_PE == 'PE'):    
+            prem = self.calcPrem(self, spot, stk, 1, PE_volt, 'PE')
+
+        return prem    
+        
+
+    def calcPrem(self, spot, strike, dayToExp, volt, CE_PE):
+        volt = volt/100
+        delta_t = 0.1
+        if(dayToExp == 1):
+            delta_t = self.default_theta/self.year_d
+        else:
+            delta_t = dayToExp/self.year_d
+            
+        d1 = (math.log(spot/strike) + (self.int_rate + (math.pow(volt,2))/2) * delta_t) / (volt*math.sqrt(delta_t))
+        d1 = round(d1, 10)
+
+        d2 = (math.log(spot/strike) + (self.int_rate - math.pow(volt,2)/2) * delta_t) / (volt*math.sqrt(delta_t))
+        d2 = round(d2, 10)
+        Nd1 = round(self.cdf(d1), 10)
+        Nd2 = round(self.cdf(d2), 10)
+        _Nd1 = round(self.cdf(-1 * d1), 10)
+        _Nd2 = round(self.cdf(-1 * d2), 10)
+        fv_strike = (strike) * math.exp (-1 * self.int_rate * delta_t)
+        prem = 0.0
+        if(CE_PE == 'CE'):
+            call_prem = spot * Nd1 - fv_strike * Nd2
+            prem = round(call_prem, 2)
+        elif(CE_PE == 'PE'):
+            put_prem = fv_strike * _Nd2 - spot * _Nd1
+            prem = round(put_prem, 2)
+
+        return prem
+
+    def cdf(x):
+        return 0.5 * math.erfc(- (x- 0) / (1 * math.sqrt(2)))
+
+    def pdf(x):
+        m_val = 1 * math.sqrt(2 * math.pi)
+        e_val = math.exp(-math.pow(x - 0, 2) / (2 * 1))
+        return e_val /m_val
+
+def main():
+    dInst = DailyDataAnalyser
+    dInst.readOHLCDataFile(dInst, 'C:\\Users\\keyur\\Documents\\Keyur\\TradeBook\\PythonPrograms\\NSE_Index_data.csv');
+
+if __name__=="__main__":
+    msg = main()
