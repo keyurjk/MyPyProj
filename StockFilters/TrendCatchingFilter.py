@@ -1,4 +1,4 @@
-import csv, statistics, datetime
+import csv, statistics, datetime,re
 #import os, urllib.request, concurrent.futures  
 '''
 version1: read bhavcopy files of last 4 days and today live stock data file and mearge in a list and print.
@@ -13,9 +13,12 @@ version1.1: collect data in a map. with stokname as a key and two day historical
 ----------------
 '''
 class StrategyBuilder:
-
+    
+    
     selectedStocksData=''
+    morngBODFilter=1
     tradeSignalData=dict()
+    eodStocks=dict()
     def populate(self, iselectedStocksData):
         print("populate")
         self.selectedStocksData=''
@@ -32,6 +35,77 @@ class StrategyBuilder:
     def backTest(self):
         print("backTest")        
 
+    def eodTrendReversalFilter(self, stock):
+        #print('EOD stock:', stock)
+        data = self.selectedStocksData[stock]
+        #(already sorted while insertion, last first)
+        datalen = len(data)
+        greencount = 0
+        redcount = 0
+        stockmove = []
+        if(datalen<4):
+            print('Not enough data found for ', stock)
+            print(data)
+        else:
+                
+            dOP1 = float(data[0][2].replace(',',''))              
+            dCP1 = float(data[0][5].replace(',',''))
+            opcl1 = dCP1-dOP1
+            if(opcl1 < 0):
+                stockmove.append('RED')
+                redcount = redcount+1
+            else:
+                stockmove.append('GREEN')
+                greencount = greencount+1
+
+            dOP2 = float(data[1][2].replace(',',''))
+            dCP2 = float(data[1][5].replace(',',''))
+            
+            opcl2 = dCP2-dOP2
+            if(opcl2 < 0):
+                stockmove.append('RED')
+                redcount = redcount+1
+            else:
+                stockmove.append('GREEN')
+                greencount = greencount+1
+            
+            dOP3 = float(data[2][2].replace(',',''))
+            dCP3 = float(data[2][5].replace(',',''))
+           
+            opcl3 = dCP3-dOP3
+            if(opcl3 < 0):
+                stockmove.append('RED')
+                redcount = redcount+1
+            else:
+                stockmove.append('GREEN')
+                greencount = greencount+1
+            
+            dOP4 = float(data[3][2].replace(',',''))
+            dHP4 = float(data[3][3].replace(',',''))
+            dLP4 = float(data[3][4].replace(',',''))
+            dCP4 = float(data[3][5].replace(',',''))
+            
+            opcl4 = dCP4-dOP4
+            if(opcl4 < 0):
+                stockmove.append('RED')
+                redcount = redcount+1
+            else:
+                stockmove.append('GREEN')
+                greencount = greencount+1
+
+            if(greencount >= 3 and stockmove[3] == 'RED'):
+                self.eodStocks[stock] = []
+                (self.eodStocks[stock]).append(['EOD: SHORT Below, SL',
+                                                      round(dLP4,2), round(dHP4,2),
+                                                      round(abs(dHP4-dLP4),2), 'Bearish below'])            
+
+            if(redcount >= 3 and stockmove[3] == 'GREEN'):
+                self.eodStocks[stock] = []
+                (self.eodStocks[stock]).append(['EOD: Long above, SL',
+                                                      round(dHP4,2), round(dLP4,2),
+                                                      round(abs(dHP4-dLP4),2), 'Bullish above'])            
+
+        
     def trendCatchingFilterStocks(self):
         '''
             Long pattern:
@@ -43,101 +117,61 @@ class StrategyBuilder:
         mappingKeys = list(self.selectedStocksData)
         
         for stock in mappingKeys:
-            #print('stockKey:', stock)
-            data = self.selectedStocksData[stock]
-            #(already sorted while insertion, last first)
-            
-            datalen = len(data)
-            greencount = 0
-            redcount = 0
-            stockmove = []
-            
-            if(datalen>=4):
-                dOP1 = float(data[0][2].replace(',',''))              
-                dCP1 = float(data[0][5].replace(',',''))
-                opcl1 = dCP1-dOP1
-                if(opcl1 < 0):
-                    stockmove.append('RED')
-                    redcount = redcount+1
-                else:
-                    stockmove.append('GREEN')
-                    greencount = greencount+1
+            self.eodTrendReversalFilter(self, stock)
 
-                dOP2 = float(data[1][2].replace(',',''))
-                dCP2 = float(data[1][5].replace(',',''))
+        if(self.morngBODFilter==0):
+            #print('----- EOD List ------')
+            print(self.eodStocks)
+        else:    
+            mappingKeys = list(self.eodStocks)
+            for stock in mappingKeys:
+                data = self.selectedStocksData[stock]
+                eodData = self.eodStocks[stock]
+                stockSignal = eodData[0][0]
+                #print('EOD stock:', stock, stockSignal)
                 
-                opcl2 = dCP2-dOP2
-                if(opcl2 < 0):
-                    stockmove.append('RED')
-                    redcount = redcount+1
-                else:
-                    stockmove.append('GREEN')
-                    greencount = greencount+1
-                
-                dOP3 = float(data[2][2].replace(',',''))
-                dCP3 = float(data[2][5].replace(',',''))
-               
-                opcl3 = dCP3-dOP3
-                if(opcl3 < 0):
-                    stockmove.append('RED')
-                    redcount = redcount+1
-                else:
-                    stockmove.append('GREEN')
-                    greencount = greencount+1
-                
-                dOP4 = float(data[3][2].replace(',',''))
-                dHP4 = float(data[3][3].replace(',',''))
-                dLP4 = float(data[3][4].replace(',',''))
-                dCP4 = float(data[3][5].replace(',',''))
-                
-                opcl4 = dCP4-dOP4
-                if(opcl4 < 0):
-                    stockmove.append('RED')
-                    redcount = redcount+1
-                else:
-                    stockmove.append('GREEN')
-                    greencount = greencount+1
-
-                #print(data[4][1])
-                todOP = float(data[4][1].replace(',',''))
-                todHP = float(data[4][2].replace(',',''))
-                todLP = float(data[4][3].replace(',',''))
-                todCP = float(data[4][5].replace(',',''))
-                
-                todOpcl = todCP-todOP
-                '''
-                    short condn
-                    prev 3D to YD upmove(green), YD Red, today OpenPP > YD-CP/YDLP (gapup coond)                    
-                    short BV = HighPP > OpenPP and LTP < OpenPP 
-                    so can short
-                '''
-                
-                if(greencount >= 3 and stockmove[3] == 'RED'
-                   and (todOP > dCP4 or todOP > dLP4)
-                   and (todHP > todOP and todCP <= todOP)):
-                    print(stock, " datalen::", datalen)
-                    print(stockmove, greencount, redcount)
-                    #short the stock
-                    self.tradeSignalData[stock] = []
-                    (self.tradeSignalData[stock]).append(['BOD: SHORT Below, SL', round(todOP,2), round(todHP,2), round(abs(todHP-todOP),2), 'GapUp-Bearish'])
+                #(already sorted while insertion, last first)
+            
+                datalen = len(data)
+                if(datalen>=5):
+                    dOP4 = float(data[3][2].replace(',',''))
+                    dHP4 = float(data[3][3].replace(',',''))
+                    dLP4 = float(data[3][4].replace(',',''))
+                    dCP4 = float(data[3][5].replace(',',''))
+            
+                    #print(data[4][1])
+                    todOP = float(data[4][1].replace(',',''))
+                    todHP = float(data[4][2].replace(',',''))
+                    todLP = float(data[4][3].replace(',',''))
+                    todCP = float(data[4][5].replace(',',''))
                     
-                '''
-                    Long condn
-                    prev 3D to YD downmove(red), YD green,
-                    today OpenPP < YD-CP/YDHP (gapdown coond)                    
-                    long BV = LowPP < OpenPP and LTP > OpenPP 
-                    so can short
-                '''
-                if(redcount >= 3 and stockmove[3] == 'GREEN'
-                   and (todOP < dCP4 or todOP < dHP4)
-                   and (todLP < todOP and todCP >= todOP)):
-                    print(stock, " datalen::", datalen)
-                    print(stockmove, greencount, redcount)
-                    #go long the stock
-                    self.tradeSignalData[stock] = []
-                    (self.tradeSignalData[stock]).append(['BOD: Long above, SL', round(todOP,2), round(todLP,2), round(abs(todLP-todOP),2), 'GapDown-Bullish'])    
-               
-               
+                    todOpcl = todCP-todOP
+                    '''
+                        short condn
+                        prev 3D to YD upmove(green), YD Red, today OpenPP > YD-CP/YDLP (gapup coond)                    
+                        short BV = HighPP > OpenPP and LTP < OpenPP 
+                        so can short
+                    '''
+                    if(re.search('SHORT',stockSignal)):
+                        if((todOP > dCP4 or todOP > dLP4)
+                           and (todHP > todOP and todCP <= todOP)):
+                            self.tradeSignalData[stock] = []
+                            (self.tradeSignalData[stock]).append(['BOD: SHORT Below, SL', round(todOP,2), round(todHP,2), round(abs(todHP-todOP),2), 'GapUp-Bearish'])
+                        
+                    '''
+                        Long condn
+                        prev 3D to YD downmove(red), YD green,
+                        today OpenPP < YD-CP/YDHP (gapdown coond)                    
+                        long BV = LowPP < OpenPP and LTP > OpenPP 
+                        so can short
+                    '''
+                    if(re.search('Long', stockSignal)):
+                        if((todOP < dCP4 or todOP < dHP4)
+                           and (todLP < todOP and todCP >= todOP)):
+                            #go long the stock
+                            self.tradeSignalData[stock] = []
+                            (self.tradeSignalData[stock]).append(['BOD: Long above, SL', round(todOP,2), round(todLP,2), round(abs(todLP-todOP),2), 'GapDown-Bullish'])    
+                   
                 
 '''
 ----------------
@@ -145,6 +179,7 @@ class StrategyBuilder:
 class FileReader:
 
     selectedStocksData = dict()
+    selectedStocksList = set([])
     
     def readDailyBhavCopy(self, bhavFileName, selectedStocksList, selectedStocksData):
         with open(bhavFileName, newline='') as f:
@@ -160,7 +195,7 @@ class FileReader:
                     #print(row)
 
     def collectSelectedStocksData(self, liveFileName, bhavFileName4, bhavFileName3, bhavFileName2, bhavFileName1, selectedStocksFile):
-        selectedStocksList = set([])
+        selectedStocksList = self.selectedStocksList
         selectedStocksData = self.selectedStocksData
         print('file:', selectedStocksFile)
         with open(selectedStocksFile, newline='') as f1:
@@ -217,6 +252,8 @@ class FileReader:
             for row in lt:                
                 stock = row[0]
                 if((stock in selectedStocksList)):
+                    if(stock not in selectedStocksData):
+                        selectedStocksData[stock]=[]
                     (selectedStocksData[stock]).append(row)
                     #print(row)
     
@@ -238,4 +275,7 @@ class FileReader:
                 row[6] = round(dif,2)
                 row[7] = ret
                 row[8] = cp
+                #print(dt, cp, row[6], row[7], '%')
+
  
+           
