@@ -261,12 +261,87 @@ class AlgoPractice:
         return minValueIndex
             
     def selectionSort(self, A):
+        '''
+            logic: traverse through array from starting element (from left to right, 0 to n)
+            compare each element from start for minimum value in the remaining right sub array
+            if found swap the starting place/current element value with minimum value place.
+            iterate untill end of array.
+            Two level for loops, one for main traversal from 0 to n,
+            second internal for finding minimum value in the sub array from current element to end of array.
+            asymptotic notation traversal = n^2 i.e theta(n^2), as have to traverse thru each element
+            and find minimum value in each subarray from current element to end of array (compulsory internal traversal
+            even if minimum value not found in sub array).
+                
+        '''
         for i in range(0, len(A)):
             minValIndex = self.indexOfMinimumValue(A, i)
             if(minValIndex != i):
                 self.swap(A, i, minValIndex)
             
         print(A)
+
+    def insertionSort(self, A):
+        '''
+            logic: traverse through array from starting element. (1 to n)
+            compare each current element to the previous subarray from 0 to previous element,
+            if any previous element is > current element, right shift the subarray from previous element position to
+            current element position, so it will overright current element and empty the greater previous element position.
+            iterate and move all previous elements greater than current element. 
+            and last step insert the current element at the greatest element found.
+
+            Two level for loops, one for main traversal from 1 to n,
+            second internal for finding greater element in the sub array from current element to start of the array.
+            (internal iteration is in reverse)
+            asymptotic notation traversal = n^2 for worst case, i.e theta(n^2),
+            but if the array is almost sorted, the internal for loop
+            doesn't run(as it stops on 1st comparision to previous element if it is less than current element)
+            and so it could be O(n) traversal which is the best case and its Omega(n).
+        '''
+        for i in range(1, len(A)):
+            self.insertElement(self, A, i-1, A[i]) 
+
+        print(A)
+
+    def insertElement(self, A, rightIndex, value):
+        #start from previous element index
+        j = rightIndex
+        #iterate untill 1st element Or element greater than current element
+        while (j >= 0 and A[j] > value):
+            #shift array right side
+            A[j+1] = A[j]
+            #go to next previous position
+            j = j-1
+
+        #insert the current element value at the greatest element place
+        A[j+1] = value
+
+
+    def calcFactorial(self, n):
+        x = n
+        if(n < 0):
+            x = n * -1
+        result = self.recurseFactorial(self, x)
+        if(n < 0):
+            result = result * -1
+        print('factorial of ', n, result)
+
+    def recurseFactorial(self, n):
+
+        if(n <= 0):
+            return 1
+
+        return n * self.recurseFactorial(self, n-1)
+
+    def calcPower(self, x, n):
+        print("calculating ", x, " raise to ", n)
+        result = self.power(self, x, n)
+        print("result ", result)
+
+    def power(self, x, n):
+        if(n <= 0):
+            return 1
+        result = x * self.power(self, x, n-1)
+        return result
     
 def main():
 
@@ -275,7 +350,9 @@ def main():
     inputA = [ -939, 369, 319, 77, 128, -202, 282, 182, 83, -489, -443, -401, 385, 965, 0]
     print(inputA)            
     algoTest.selectionSort(algoTest, inputA)
-    
+    #algoTest.insertionSort(algoTest, inputA)
+    #algoTest.calcFactorial(algoTest, 5)
+    #algoTest.calcPower(algoTest, 3, 4)
     '''
     
     primesA = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97]
