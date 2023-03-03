@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<!--
+22Feb22: Keyur: Created customised Banknifty 5min chart display using TradingView lightweight-charts javascript.
+V1: Display chart, take buy/sell entry, flatten/exit partially, 100 points target and SL line to help exit manually.
+On entry/exit only close PP of last candle considered.
+
+TODO: 1. Capture trade data for analysis.
+2. Calculate OTM round options PP and display in a box to take options trade. (Use IV from iCharts.)
+3. Capture options trade data.
+4. Use BN Fut volume. (have to download BN Fut chart. ?? not available on zerodha, need to try TradingView website) 
+
+28-Feb-23
+New change for practice. Focus on strike rather than Pnl.
+1. So Win/Loose strike.
+2. Increment GotoIndex by  1 day, so a lossing day goes to next day for trade.
+-->
+
+<!-- Please visit https://tradingview.github.io/lightweight-charts/tutorials/customization for more information on this tutorial. -->
+<html>
+  <head>
+    <meta charset='UTF-8' />
+    <meta
+      name='viewport'
+      content='width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0'
+    />
+    <title>Lightweight Charts Customization Tutorial</title>
+	<!-- Adding the standalone version of Lightweight charts -->
+<script
+    type='text/javascript'
+    src='https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js'
+></script>
+
+    <style>
+      body {
+        padding: 0;
+        margin: 0;
+		
+        background-color: #222;
+      }
+	  
+    </style>
+  </head>
+
+  <body style='padding: 0; margin: 0; width: 100%; height: 10%'>
+  <div id='' style=''>
+		<input id='input' type='file' accept='text/plain' style='width:70px;color:blue;'>
+		&nbsp;&nbsp;
+		<button id='keyp' type='button' onclick='customRender()' style='width:60px;color:blue;'><B>Render Chart</B></button>
+		&nbsp;
+		<label for='buyQty' style='color:blue;'>Buy Qty</label>
+		<input id='buyQty' type='number'  name='buyQty' value='1' style='width:30px;color:blue;'>
+		
+		<button id='buy' type='button' onClick='buyAction()' style='color:blue;'><b>Buy</b></button>
+		&nbsp;
+		<label for='sellQty' style='color:orange;'>Sell Qty</label>
+		<input id='sellQty' type='number'  name='sellQty' value='-1' style='width:30px;color:gray;'>
+			
+		<button id='sell' type='button' onClick='sellAction()' style='color:red;'><b>Sell</b></button>
+		&nbsp;
+		
+		<label for='exitQty' style='color:pink;'>Exit Qty</label>
+		<input id='exitQty' type='number'  name='exitQty' value='0' style='width:30px;color:gray;'>
+		
+		<button id='flatten' type='button' onClick='flattenAction()' style='color:red;'><B>Flatten</B></button>
+		
+		&nbsp;
+		<label for='curTrade' style='color:skyblue;'>Cur.Trade</label>
+		<input id='curTrade' type='text'  value='None' style='width:40px;color:black;' disabled>
+		
+		<label for='curQty' style='color:skyblue;'>Qty</label>
+		<input id='curQty' type='number'  value='0' style='width:30px;color:blue;' disabled>
+		
+		<label for='pnl' style='color:skyblue;'>PnL</label>
+		<input id='pnl' type='number'  value='0' style='width:50px;color:blue;' disabled>
+		
+		
+		<label for='cumPnL' style='color:skyblue;'>CPnL</label>
+		<input id='cumPnL' type='number'  value='0' style='width:50px;color:blue;' disabled>
+		
+		<label for='realizedPnL' style='color:yellow;'>RPnL</label>
+		<input id='realizedPnL' type='number'  value='0' style='width:50px;color:blue;' disabled>
+		
+		<label for='wStrikes' style='color:skyblue;'>Ws</label>
+		<input id='wStrikes' type='number'  value='0' style='width:30px;color:blue;' disabled>
+		<label for='strikeRate' style='color:skyblue;'>SR</label>
+		<input id='strikeRate' type='number'  value='0' style='width:40px;color:blue;' disabled>
+		
+		<BR>
+		
+		<label for='currentOHLC' style='color:blue;'>Cur CP</label>
+		<input id='currentOHLC' type='number'  value='0' style='width:50px;color:black;' disabled>
+		
+		<label for='avgEntryPP' style='color:blue;'>AEntP</label>
+		<input id='avgEntryPP' type='number'  value='0' style='width:50px;color:black;' disabled>
+		 
+		<label for='exitPP' style='color:blue;'>ExitP</label>
+		<input id='exitPP' type='number'  value='0' style='width:50px;color:black;' disabled>
+		 
+		<label for='tgtPP' style='color:green;'>TP</label>
+		<input id='tgtPP' type='number'  value='0' style='width:50px;color:black;' disabled>		
+		 
+		<label for='slPP' style='color:red;'>SP</label>
+		<input id='slPP' type='number'  value='0' style='width:60px;color:black;' disabled>
+		 
+		<input id='gotoIndex' type='number'  name='gotoIndex' value='1' style='width:40px;color:gray;'>
+		 
+		<button id='gotoIndexButton' type='button' onClick='gotoIndexButton()' style='color:black;'>GoTO</button>
+		 
+		<label for='allPnLs' style='color:skyblue;'>Strikes</label>
+		<input id='allPnLs' type='text'  value='0' style='width:420px;color:blue;' readonly>
+		&nbsp;
+		<label for='totalTrades' style='color:skyblue;'>Trades</label>
+		<input id='totalTrades' type='number'  value='0' style='width:30px;color:blue;' disabled>
+		 
+		<label for='currentCapital' style='color:yellow;'>C</label>
+		<input id='currentCapital' type='number'  value='-10000' style='width:50px;color:blue;' disabled>
+		
+	</div>
+	
+	<div id="formdiv">
+		<input type="hidden" id="input-spot"  value="40000" step="10">	
+		
+		<input type="hidden" id="fromDate"  value="2023-02-28 15:30:00">	
+		<input type="hidden" id="expiryDate"  value="2023-03-02 15:30:00">		
+		<input type="hidden" id="input-volt"  value="14.5">	
+		<input type="hidden" id="input-intrate"  value="10" >	
+		<input type="hidden" id="input-divyld"  value="0.0" readonly>		
+	</div>
+
+	<div id="prem-results"  style='background-color:gray; padding: 0; margin: 0; width: 100%; height: 10%'>
+        <table><thead><tr>
+					<th style='width:60px;color:blue;'>C- Strike</th>
+					<th style='width:30px;color:black;'>|&nbsp;</th>
+					<th style='width:60px;color:maroon;'>P- Strike</th>
+					<th style='width:30px;color:black;'>&nbsp; | &nbsp;</th>
+                    <th style='width:60px;color:blue;'>C- Prem</th>
+					<th style='width:30px;color:black;'>&nbsp; | &nbsp;</th>
+                    <th style='width:60px;color:maroon;'>P- Prem</th>
+					<th style='width:30px;color:black;'>&nbsp; | &nbsp;</th>
+                    <th style='width:60px;color:skyblue;'>C- Delta</th>
+                    <th style='width:60px;color:pink;'>P- Delta</th>
+                    <th style='width:60px;color:skyblue;'>Gamma</th>				
+                    <th style='width:60px;color:purple;'>Vega</th>
+					
+					<!--
+					<th style='width:60px;color:skyblue;'>C- Theta</th>
+                    <th style='width:60px;color:pink;'>P- Theta</th>
+                    <th style='width:60px;color:skyblue;'>C- Rho</th>
+                    <th style='width:60px;color:pink;'>P- Rho</th>
+					-->
+					
+					<th style='width:30px;color:black;'>&nbsp; | &nbsp;</th>
+					<th style='width:60px;color:blue;'>AvgC-PP</th>
+					<th style='width:40px;color:blue;'>C-Qty</th>
+					<th style='width:60px;color:blue;'>C-Pnl</th>
+					<th style='width:30px;color:black;'>&nbsp; | &nbsp;</th>
+					<th style='width:60px;color:maroon;'>AvgP-PP</th>
+					<th style='width:40px;color:maroon;'>P-Qty</th>
+					<th style='width:60px;color:maroon;'>P-Pnl</th>
+            </tr></thead>
+            <tbody><tr>
+					<td><input id="c-strike" type='number' onchange='displayCurrentOHLC()' value='27000' style='width:60px;color:blue;' step="100"></td>
+					<td>&nbsp; | &nbsp;</td>
+					<td><input id="p-strike" type='number' onchange='displayCurrentOHLC()' value='27000' style='width:60px;color:maroon;' step="100"></td>
+					<td>&nbsp; | &nbsp;</td>
+					<td><input id="call-option-prem-value" type='number'  value='0' style='width:60px;color:blue;' readonly></td>
+					<td>&nbsp; | &nbsp;</td>
+					<td><input id="put-option-prem-value" type='number'  value='0' style='width:60px;color:maroon;' readonly></td>
+					<td>&nbsp; | &nbsp;</td>
+					<td><input id="call-option-delta-value" type='number'  value='0' style='width:60px;color:blue;' readonly></td>
+					<td><input id="put-option-delta-value" type='number'  value='0' style='width:60px;color:red;' readonly></td>
+					<td><input id="option-gamma-value" type='number'  value='0' style='width:60px;color:blue;' readonly></td>
+					<td><input id="option-vega-value" type='number'  value='0' style='width:60px;color:purple;' readonly></td>
+					<!--
+					<td><input id="call-option-theta-value" type='number'  value='0' style='width:60px;color:blue;' readonly></td>
+					<td><input id="put-option-theta-value" type='number'  value='0' style='width:60px;color:red;' readonly></td>
+					<td><input id="call-option-rho-value" type='number'  value='0' style='width:60px;color:blue;' readonly></td>
+					<td><input id="put-option-rho-value" type='number'  value='0' style='width:60px;color:red;' readonly></td>
+					-->
+					<th style='width:30px;color:black;'>&nbsp; | &nbsp;</th>
+					
+					<td><input id="currentBuyPP" type='number'  value='0' style='width:60px;color:blue;' readonly></td>
+					<td><input id="currentBuyQty" type='number'  value='0' style='width:40px;color:blue;' readonly></td>
+					<td><input id="c-pnl" type='number'  value='0' style='width:60px;color:blue;' readonly></td>
+					<td style='width:30px;color:black;'>&nbsp; | &nbsp;</td>
+					<td><input id="currentSellPP" type='number'  value='0' style='width:60px;color:maroon;' readonly></td>
+					<td><input id="currentSellQty" type='number'  value='0' style='width:40px;color:maroon;' readonly></td>
+					<td><input id="p-pnl" type='number'  value='0' style='width:60px;color:maroon;' readonly></td>
+                </tr></tbody></table>       
+    </div>
+	
+	<div
+      id='container'
+      style='position: absolute; width: 100%; height: 80%'
+    ></div>
+	
+	
+    <script type='text/javascript'>
+	
+		<!-- GLOBAL VARIABLES -->
+		currentTradeButton = 'None'
+		var currentBuyQty = 0.0
+		var currentSellQty = 0.0
+	
+		var currentBuyPP = 0.0
+		var currentSellPP = 0.0
+		exitPointLevel = 60
+		pnlWinLevel = 30
+		defaultIv = 14
+		wStrikes = 0
+		strikeRate = 0
+		entryPP = 0
+		
+		//***	
+		curOHLCAry = null
+		
+		
+		<!-- BUTTON FUNCTIONS -->
+		function gotoIndexButton(){
+			var gotoindex = parseInt(document.getElementById('gotoIndex').value);
+			flattenAction();
+			currentIndex = gotoindex;
+			document.getElementById("keyp").focus();
+		}
+		
+		function buyAction(){
+		
+			var userselection = confirm("Option strike checked?");
+			if (userselection == true){
+				console.log('buyAction called')
+			} else {
+				document.getElementById("c-strike").focus();
+				return;
+			}
+			//console.log('buyAction called')
+						
+			var inputQty = parseInt(document.getElementById('buyQty').value);
+			//var curQty = parseInt(document.getElementById('curQty').value);
+						
+			currentBuyQty = currentBuyQty + inputQty			
+			document.getElementById('currentBuyQty').value = currentBuyQty			
+			
+			//set all values
+			
+			callOptionVal = parseFloat(document.getElementById('call-option-prem-value').value);
+			if(currentBuyPP == 0) {
+				currentBuyPP = callOptionVal
+				
+			} else {
+				currentBuyPP = (currentBuyPP + callOptionVal)/2
+				
+			}
+			document.getElementById('currentBuyPP').value = currentBuyPP.toFixed(0);
+			
+			if(document.getElementById('curTrade').value == 'Short'){
+					
+			
+			} else {
+				entryPP = (entryPP + curOHLCAry.close) / (currentBuyQty)
+				document.getElementById('curTrade').value = 'Long';
+				document.getElementById('curQty').value = currentBuyQty;
+				document.getElementById('avgEntryPP').value = entryPP;
+				tgtPP = curOHLCAry.close + exitPointLevel
+				document.getElementById('tgtPP').value = tgtPP
+				slPP = curOHLCAry.close - exitPointLevel
+				document.getElementById('slPP').value = slPP
+				
+				document.getElementById('exitPP').value = 0;
+			}
+			
+			document.getElementById("keyp").focus();
+		}
+		
+		function sellAction(){
+			//
+			var userselection = confirm("Option strike checked?");
+			if (userselection == true){
+				console.log('sellAction called')
+			} else {
+				document.getElementById("p-strike").focus();
+				return;
+			}
+			
+			var inputQty = parseInt(document.getElementById('sellQty').value);
+			//var curQty = parseInt(document.getElementById('curQty').value);
+
+			currentSellQty = currentSellQty + inputQty
+			//currentSellQty = currentQty;		
+			document.getElementById('currentSellQty').value = (currentSellQty * -1)
+			//set all values
+			
+			putOptionVal = parseFloat(document.getElementById('put-option-prem-value').value);
+			if(currentSellPP == 0) {
+				//currentSellPP = curOHLCAry.close
+				currentSellPP = putOptionVal
+				
+			} else {
+				currentSellPP = (currentSellPP + putOptionVal)/2
+				
+			}
+			document.getElementById('currentSellPP').value = currentSellPP.toFixed(0);
+			
+			if(document.getElementById('curTrade').value == 'Long'){
+				
+			} else {
+				entryPP = (entryPP + curOHLCAry.close) / (currentSellQty * -1)
+				document.getElementById('curTrade').value = 'Short';
+				document.getElementById('curQty').value = currentSellQty;
+				document.getElementById('avgEntryPP').value = entryPP.toFixed(0);
+			
+				tgtPP = curOHLCAry.close - exitPointLevel
+				document.getElementById('tgtPP').value = tgtPP
+				slPP = curOHLCAry.close + exitPointLevel
+				document.getElementById('slPP').value = slPP
+				
+				document.getElementById('exitPP').value = 0;
+			}
+			
+			document.getElementById("keyp").focus();
+		}
+		
+		function partialExitAction(exitQty){
+			
+			console.log('partialExitAction called:exitQty:' + exitQty);
+			partialRealisedPnL = 0
+			if(exitQty < 0 && currentSellQty < 0) { //short side exit
+				partialRealisedPnL = calculateCurrentShortTradePnL(exitQty)				
+				currentSellQty = currentSellQty + exitQty				
+				document.getElementById('currentSellQty').value = currentSellQty
+				setPartialPnlValues(partialRealisedPnL)
+				if(currentSellQty >= 0) {
+					resetShortValues()
+				}		
+				
+			}
+			if(exitQty > 0 && currentBuyQty > 0) { //long side exit
+			
+				partialRealisedPnL = calculateCurrentLongTradePnL(exitQty)				
+				currentBuyQty = currentBuyQty - exitQty			
+				document.getElementById('currentBuyQty').value = currentBuyQty
+				setPartialPnlValues(partialRealisedPnL)
+				if(currentBuyQty <= 0) {
+					resetLongValues()					
+				}		
+			}	
+			document.getElementById("keyp").focus();
+			
+		}
+		
+		function setPartialTradeName() {
+			
+			if(document.getElementById('curTrade').value == 'Long' && currentBuyQty == 0){
+				if(currentSellQty < 0) {
+					document.getElementById('curTrade').value = 'Short'
+				} else {
+					setDefaultValuesOnExit()
+				}
+			}
+			
+			if(document.getElementById('curTrade').value == 'Short' && currentSellQty == 0){
+				if(currentBuyQty > 0) {
+					document.getElementById('curTrade').value = 'Long'
+				} else {
+					setDefaultValuesOnExit()
+				}
+			}
+		}
+		
+		function setDefaultValuesOnExit() {
+			document.getElementById('curTrade').value = 'ExitedAll'
+			resetTradePoints()
+			entryPP = 0
+		}
+		
+		function resetLongValues() {
+			document.getElementById('currentBuyQty').value = 0
+			document.getElementById('currentBuyPP').value = 0
+			document.getElementById('c-pnl').value = 0
+			currentBuyPP = 0.0
+			currentBuyQty = 0
+		}
+		
+		function resetShortValues() {
+			document.getElementById('currentSellQty').value = 0
+			document.getElementById('currentSellPP').value = 0
+			document.getElementById('p-pnl').value = 0
+			currentSellQty = 0
+			currentSellPP = 0.0
+		}
+		
+		function resetTradePoints(){
+			document.getElementById('avgEntryPP').value = 0;
+			document.getElementById('tgtPP').value = 0;
+			document.getElementById('slPP').value = 0;
+			document.getElementById('exitPP').value = curOHLCAry.close;
+		}
+		function setPartialPnlValues(partialRealisedPnL) {
+			if(partialRealisedPnL != 0){
+				realizedPnL = parseInt(document.getElementById('realizedPnL').value);
+				realizedPnL = realizedPnL + partialRealisedPnL
+				
+				markStrike(partialRealisedPnL);			
+				document.getElementById('realizedPnL').value = realizedPnL.toFixed(0);
+				currentCapital = parseInt(document.getElementById('currentCapital').value);
+				currentCapital = currentCapital + partialRealisedPnL
+				
+				document.getElementById('currentCapital').value = currentCapital.toFixed(0)
+			
+				calculateCurrentPnL();
+			}
+		}
+		
+		function markStrike(pnl) {
+			//console.log('markStrike called:'+ pnl)
+			allPnLs = document.getElementById('allPnLs').value
+			nooftrades = parseInt(document.getElementById('totalTrades').value) + 1;
+			document.getElementById('totalTrades').value = nooftrades;
+			
+			if(pnl >= pnlWinLevel-2 ){
+				//allPnLs = 'W,' + allPnLs				
+				wStrikes = wStrikes +1				
+			}
+			allPnLs = pnl.toFixed(0) + ',' + allPnLs
+			strikeRate = (wStrikes/nooftrades) *100
+			console.log('markStrike strikeRate:'+ strikeRate)
+			document.getElementById('allPnLs').value = allPnLs
+			document.getElementById('wStrikes').value = wStrikes
+			document.getElementById('strikeRate').value = strikeRate.toFixed(1);
+		
+		}
+		
+		function flattenAction(){
+			//console.log('flattenAction called')
+			if(document.getElementById('curTrade').value == 'None' || document.getElementById('curTrade').value == 'ExitedAll'){
+				return; //not in trade
+			}
+			exitQty = parseInt(document.getElementById('exitQty').value);
+			if(exitQty != 0){
+				return partialExitAction(exitQty);
+			}
+			calculateCurrentPnL();
+			pnl = parseInt(document.getElementById('pnl').value);
+			realizedPnL = parseInt(document.getElementById('realizedPnL').value);
+			realizedPnL = realizedPnL + pnl
+			
+			markStrike(pnl)
+			document.getElementById('realizedPnL').value = realizedPnL.toFixed(0);
+			
+			document.getElementById('curQty').value = 0
+			document.getElementById('pnl').value = 0
+			//document.getElementById('cumPnL').value = realizedPnL
+			
+			currentCapital = parseInt(document.getElementById('currentCapital').value);
+			currentCapital = currentCapital + pnl
+			document.getElementById('currentCapital').value = currentCapital.toFixed(0);
+			document.getElementById('cumPnL').value = 0
+			
+			setDefaultValuesOnExit();
+			
+			resetLongValues()
+			resetLongValues();
+			
+			document.getElementById("keyp").focus();
+		}
+		
+		<!-- PNL FUNCTIONS -->
+		function calculateCurrentLongTradePnL(icurrentBuyQty){
+			//console.log('calculateCurrentLongTradePnL called')
+			
+			callOptionVal = parseFloat(document.getElementById('call-option-prem-value').value);
+			entryAvgBuyPPValue = currentBuyPP * icurrentBuyQty
+			currentValue = callOptionVal * icurrentBuyQty
+			pnl = currentValue - entryAvgBuyPPValue
+			
+			//console.log('calculateCurrentLongTradePnL:' + pnl)
+			//console.log('calculateCurrentLongTradePnL:' + pnl.toFixed(0) + ':currentBuyQty:' + currentBuyQty + ':curOHLCAry.close:' + curOHLCAry.close + ':currentBuyPP:' 			+ currentBuyPP + ':entryAvgBuyPPValue:' + entryAvgBuyPPValue + ':callOptionVal:' +callOptionVal);
+			//document.getElementById('pnl').value = pnl.toFixed(0);
+			return pnl;		
+			
+		}
+		
+		function calculateCurrentShortTradePnL(icurrentSellQty){
+			//console.log('calculateCurrentShortTradePnL called')
+			putOptionVal = parseFloat(document.getElementById('put-option-prem-value').value);
+			entryAvgSellPPValue = currentSellPP * (icurrentSellQty * -1)
+			currentValue = putOptionVal * (icurrentSellQty * -1)
+			pnl = currentValue - entryAvgSellPPValue
+			
+			//console.log('calculateCurrentShortTradePnL:' + pnl)
+			//console.log('calculateCurrentShortTradePnL:' + pnl.toFixed(0) + ':currentSellQty:' + currentSellQty + ':curOHLCAry.close:' + curOHLCAry.close + ':currentSellPP:' 			+ currentSellPP + ':entryAvgSellPPValue:' + entryAvgSellPPValue + ':putOptionVal:' +putOptionVal);
+			
+			return pnl;		
+			
+		}
+		
+		function calculateCurrentPnL() {
+			//console.log('calculateCurrentPnL called')
+			pnl = 0,
+			spnl = 0,
+			lpnl = 0;
+			if((currentSellQty*-1) > 0) {
+				spnl = calculateCurrentShortTradePnL(currentSellQty);
+				document.getElementById('p-pnl').value = spnl.toFixed(0);
+			} else {
+				document.getElementById('p-pnl').value = 0
+			}
+			if(currentBuyQty > 0) {		
+				lpnl = calculateCurrentLongTradePnL(currentBuyQty);
+				document.getElementById('c-pnl').value = lpnl.toFixed(0);				
+			} else {
+				document.getElementById('c-pnl').value = 0
+			}
+			pnl = lpnl + spnl; 
+			if((currentSellQty*-1) > 0 || currentBuyQty > 0) {
+				//console.log('Total PnL:' + pnl.toFixed(0))
+				calculateCumulativePnL(pnl);		
+				document.getElementById('pnl').value = pnl.toFixed(0);
+			}
+		}
+		
+		function calculateCumulativePnL(pnl){
+			//console.log('calculateCumulativePnL called')
+			realizedPnL = parseInt(document.getElementById('realizedPnL').value)
+			cumulativePnL = realizedPnL + pnl
+			//console.log('calculateCumulativePnL:' + cumulativePnL);
+			document.getElementById('cumPnL').value = cumulativePnL.toFixed(0)
+		}
+		
+		<!-- display FUNCTIONS -->
+		function displayCurrentOHLC() {
+			//console.log('displayCurrentOHLC called:' + currentIndex +':' + curOHLCAry.close)
+			//curOhlcTxt = curOHLCAry.close
+			
+			document.getElementById('currentOHLC').value = curOHLCAry.close;
+			
+			setOptionCalcValues();
+			calcPrem();
+			calculateCurrentPnL()
+			
+			document.getElementById('gotoIndex').value	= currentIndex + 75;
+			realizedPnL = parseInt(document.getElementById('realizedPnL').value);
+			
+			if(realizedPnL < -25000){
+				console.log('Capital halved, reset capital:' + currentIndex);	
+			}
+			
+		}
+		
+		
+		<!-- Data setting in candleStickData FUNCTIONS -->
+		//load data from file
+		const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+		fileData = ''
+		filename = ''
+		fileDataArray = null
+		ivDataArray = null
+		
+		currentIndex = 1
+		const input = document.querySelector('#input');
+
+		input.addEventListener('change', () => {
+		  const file = input.files.item(0);
+		  filename = file.name
+		  fileToText(file, (text) => {
+		  fileData = text
+			save();
+		  });
+		});
+
+		function fileToText(file, callback) {
+		  const reader = new FileReader();
+		  reader.readAsText(file);
+		  reader.onload = () => {
+			callback(reader.result);
+		  };
+		}
+
+		function save() {
+			if(filename == 'BankNifty_IV_data.txt') {
+				console.log('save BankNifty_IV_data called');
+				//console.log(fileData);
+				const myArr = JSON.parse(fileData);
+				//const arydata = myArr.candles;
+				ivDataArray = myArr.BankNifty_iv_data;
+				//console.log(fileDataArray[0].time)
+				datalen = ivDataArray.length
+				console.log('ivDataArray:datalen:' + datalen );	
+			} else {
+				console.log(filename + ' save called');
+				const myArr = JSON.parse(fileData);
+				//const arydata = myArr.candles;
+				fileDataArray = myArr.candles;
+				//console.log(fileDataArray[0].time)
+				datalen = fileDataArray.length
+				console.log('fileDataArray:datalen:' + datalen + 'currentIndex:' + currentIndex);	
+			}
+			if(fileDataArray != null && ivDataArray != null) {
+				matchIvData();
+			}
+		}
+		
+		function matchIvData(){
+			console.log('matchIvData called');
+			ivDataIndex = -1;
+			arr = fileDataArray
+			if(ivDataArray[0].date == (arr[0].time).split('T')[0]) {				
+			
+				ivset = 0	
+				for(let i = 0; i < fileDataArray.length; i++){
+					const time_str = arr[i].time;
+					  
+					const timepart1 = time_str.split('T');
+					const timepart2 = timepart1[1];
+					if(timepart2 == '09:15:00+0530'){
+						ivDataIndex = ivDataIndex +1
+						ivset = ivDataArray[ivDataIndex].iv
+					}
+				}
+			} else {
+				alert(ivDataArray[0].date + ' :IV start date not matching :' + (arr[0].time).split('T')[0])
+			}
+		}
+
+		function filterData() {
+			//console.log('filterData FUNCTION CALLED')
+			resultdata = null
+			//const keys = [
+					//'09:15:00+0530', '09:20:00+0530', '09:25:00+0530',
+					//'09:30:00+0530','09:35:00+0530','09:40:00+0530', 
+					//'13:20:00+0530', '13:25:00+0530', '13:30:00+0530', '13:35:00+0530', '13:40:00+0530', '13:45:00+0530', '13:50:00+0530', '13:55:00+0530', 
+					//'14:00:00+0530', '14:05:00+0530', '14:10:00+0530', 
+					//'14:15:00+0530', '14:20:00+0530', '14:25:00+0530',
+					//'14:30:00+0530', '14:35:00+0530', '14:40:00+0530', '14:45:00+0530', '14:50:00+0530', '14:55:00+0530',
+					//'15:15:00+0530', '15:20:00+0530'
+					//, '15:25:00+0530'
+					//];
+				const daysToSee = [ 'Mon', 'Tue', 'Wed', 'Thu', 'Fri']
+									//[ 'Wed', 'Thu']
+				//const eod = ['15:25:00+0530']
+				arr = fileDataArray
+				if(arr == null || arr.length ==0){
+					alert('No data');
+					return;
+				}
+			   const res = [];
+			   
+			   for(let i = 0; i < currentIndex; i++){
+				  //const { time } = arr[i];
+				    const time_str = arr[i].time;
+				  
+					const timepart1 = time_str.split('T');
+					//const timepart2 = timepart1[1];
+				  
+					dayName = getDay(time_str)
+					arr[i].wickColor = giveWickColor(dayName)
+					arr[i].dayToExpDateTime = getDayToExpDateTime(dayName, timepart1[0])
+					if(arr[i].iv == null) {
+						arr[i].iv = defaultIv;
+					}
+				  //if(
+					//(dayN == 'Mon') 
+					//||
+					//(
+					//daysToSee.includes(dayN) 
+					//&& 
+					//keys.includes(timepart2)
+					//) 
+					 
+				 //){
+					 res.push(arr[i]);
+					 //console.log(time_str);
+					 
+				 //};
+				 
+			   };
+			   //set current OHLC data for trading
+			   curOHLCAry = res[currentIndex-1]
+			   resultdata = res;
+			
+			return resultdata;
+		}
+		function getDay(datestr) {
+			var d = new Date(datestr);
+			//console.log(d.getDay());
+			
+			dayN = dayNames[d.getDay()]
+			//console.log(dayN);
+			
+			return dayN;
+
+		}
+		
+		function convertTZ(datestr) {
+			dateinmillis =  new Date(datestr).valueOf() + (330 * 60 * 1000); //UTC to IST
+			return dateinmillis;		
+		}	
+      // Function to generate a sample set of Candlestick datapoints
+      function generateCandlestickData() {
+	    temp = filterData()
+        data = temp.map((d) => {
+			return { ...d, time: convertTZ(d.time) / 1000 };
+		});
+		
+		//console.log('generateCandlestickData(): datalen:' + data.length + ':currentIndex:'+currentIndex)
+		return data;
+      }
+
+	  function giveWickColor(day){
+		if(day == 'Mon') {			
+			return 'blue'			
+		}
+		if(day == 'Tue') {
+			return 'white'			 
+		}
+		if(day == 'Wed') { 
+			return 'yellow' 
+		}
+		if(day == 'Thu') { 
+			return 'orange' 
+		}
+		if(day == 'Fri') { 
+			return 'pink' 
+		}
+	  }	  
+
+      // Your code here:
+	 function customRender(){
+	  // Create the Lightweight Chart within the container element
+	  document.getElementById('container').innerHTML = '';
+		const chart = LightweightCharts.createChart(
+			document.getElementById('container'),
+			{
+				layout: {
+					background: { color: '#222' },
+					textColor: '#DDD',
+				},
+				grid: {
+					vertLines: { color: '#444' },
+					horzLines: { color: '#444' },
+				},
+			}
+		);
+		// Setting the border color for the vertical axis
+		chart.priceScale().applyOptions({
+			borderColor: '#71649C',
+		});
+
+		// Setting the border color for the horizontal axis
+		chart.timeScale().applyOptions({
+			borderColor: '#71649C',
+			visible: true,
+			timeVisible: true,
+			secondsVisible: true
+		});
+		// Generate sample data to use within a candlestick series
+		const candleStickData = generateCandlestickData();
+		
+		// Create the Main Series (Candlesticks)
+		const mainSeries = chart.addCandlestickSeries();
+		// Set the data for the Main Series
+		mainSeries.setData(candleStickData);
+		
+		avgEntryPP = entryPP
+		tgtPP = parseInt(document.getElementById('tgtPP').value)
+		slPP = parseInt(document.getElementById('slPP').value)
+		
+		if(avgEntryPP > 0){
+			const avgEntryPPLine = {
+				price: avgEntryPP,
+				color: 'skyblue',
+				lineWidth: 1,
+				lineStyle: 1, // LineStyle.Dotted
+				axisLabelVisible: true,
+				title: '',
+			};
+			const tgtPPLine = {
+				price: tgtPP,
+				color: 'green',
+				lineWidth: 1,
+				lineStyle: 1, // LineStyle.Dotted
+				axisLabelVisible: true,
+				title: '',
+			};
+			const slEntryPPLine = {
+				price: slPP,
+				color: 'red',
+				lineWidth: 1,
+				lineStyle: 1, // LineStyle.Dotted
+				axisLabelVisible: true,
+				title: '',
+			};
+			mainSeries.createPriceLine(avgEntryPPLine);
+			mainSeries.createPriceLine(tgtPPLine);
+			mainSeries.createPriceLine(slEntryPPLine);
+		}
+		
+		//chart.timeScale().fitContent(); 
+		//window.addEventListener('resize', () => {
+		//		chart.resize(window.innerWidth, window.innerHeight);
+		//	});
+		currentIndex = currentIndex+1;
+		displayCurrentOHLC();
+	} //customRender
+	
+	<!-- options PP calc -->
+	function getDayToExpDateTime(day, dateStr){
+		
+		dayToAdd = 0;
+		if(day == 'Mon') {			
+			dayToAdd = 4;			
+		}
+		if(day == 'Tue') {
+			dayToAdd = 3;			 
+		}
+		if(day == 'Wed') { 
+			dayToAdd = 2; 
+		}
+		if(day == 'Thu') { 
+			dayToAdd = 0; 
+		}
+		if(day == 'Fri') { 
+			dayToAdd = 7; 
+		}
+		dateStr = dateStr + 'T15:30:00+0530'
+		expdate = new Date(dateStr);
+		nextExpDay = expdate.getDate() + dayToAdd;
+		expdate.setDate(nextExpDay)
+		return expdate;
+	 }
+	  
+	function setOptionCalcValues() {
+		//console.log('setOptionCalcValues:' + curOHLCAry.close + ':' + curOHLCAry.time + ':' + curOHLCAry.dayToExpDateTime + ':' + curOHLCAry.iv)
+		//console.log('setOptionCalcValues:c-strike' + document.getElementById('c-strike').value + ' : p-strike : ' + document.getElementById('p-strike').value);
+		document.getElementById('input-spot').value = curOHLCAry.close	
+		document.getElementById('fromDate').value = curOHLCAry.time
+		document.getElementById('expiryDate').value = curOHLCAry.dayToExpDateTime
+		document.getElementById('input-volt').value = curOHLCAry.iv
+		
+	}
+
+	
+    </script>
+	<script src="Zerodha_blacksholesJS.js" type="text/javascript"></script>
+	<script src="Zerodha_blacksholes_gaussianJS.js" type="text/javascript"></script>
+  </body>
+</html>
